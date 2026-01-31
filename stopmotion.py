@@ -46,6 +46,18 @@ SETTINGS_COMBO_TIME = 2.0
 
 ONION_SKIN_COLORS = [(0, 255, 0), (0, 200, 200)]
 
+# Screen button definitions (fallback for physical buttons)
+BUTTON_DEFS = [
+    (BTN_CAPTURE, "CAPTURE", (0, 160, 0)),
+    (BTN_PLAY,    "PLAY",    (180, 100, 0)),
+    (BTN_REWIND,  "DELETE",  (0, 140, 200)),
+    (BTN_CLEAR,   "CLEAR",   (0, 0, 180)),
+    (BTN_SAVE,    "SAVE",    (160, 0, 130)),
+]
+BTN_HEIGHT = 55
+BTN_MARGIN = 8
+BTN_BOTTOM_PAD = 5
+
 class GPIO:
     """Improved GPIO with debouncing"""
     
@@ -131,6 +143,38 @@ print("Creating window...")
 window_name = 'Stop Motion Studio'
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+# Screen button regions
+def calc_button_regions(w, h):
+    n = len(BUTTON_DEFS)
+    total_margin = BTN_MARGIN * (n + 1)
+    btn_w = (w - total_margin) // n
+    btn_y = h - BTN_HEIGHT - BTN_BOTTOM_PAD
+    regions = {}
+    for i, (gpio, label, color) in enumerate(BUTTON_DEFS):
+        x1 = BTN_MARGIN + i * (btn_w + BTN_MARGIN)
+        regions[gpio] = (x1, btn_y, x1 + btn_w, btn_y + BTN_HEIGHT, label, color)
+    return regions
+
+button_regions = calc_button_regions(width, height)
+screen_btn_active = None
+
+def mouse_callback(event, x, y, flags, param):
+    global screen_btn_active
+    if event == cv2.EVENT_LBUTTONDOWN:
+        screen_btn_active = None
+        for gpio, (x1, y1, x2, y2, _, _) in button_regions.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                screen_btn_active = gpio
+                break
+    elif event == cv2.EVENT_LBUTTONUP:
+        screen_btn_active = None
+
+cv2.setMouseCallback(window_name, mouse_callback)
+
+def is_pressed(btn):
+    """Check if button is pressed via GPIO or on-screen click"""
+    return GPIO.read(GPIOCHIP_NUM, btn) or screen_btn_active == btn
 
 # State
 frames = []
@@ -222,7 +266,7 @@ def draw_overlay(frame):
         
         bar_w = int(w * 0.6)
         bar_x = (w - bar_w) // 2
-        bar_y = h - 100
+        bar_y = h - 120
         
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 40), (50, 50, 50), -1)
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + int(bar_w * progress), bar_y + 40), (0, 0, 255), -1)
@@ -230,10 +274,18 @@ def draw_overlay(frame):
         cv2.putText(frame, "HOLD TO CLEAR ALL", (bar_x, bar_y - 10),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     
-    # Bottom bar
-    cv2.rectangle(frame, (0, h - 50), (w, h), (0, 0, 0), -1)
-    cv2.putText(frame, "CAPTURE | PLAY | DELETE | CLEAR | SAVE", (20, h - 15), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+    # Screen buttons
+    for gpio, (x1, y1, x2, y2, label, color) in button_regions.items():
+        if screen_btn_active == gpio:
+            draw_color = tuple(min(c + 80, 255) for c in color)
+        else:
+            draw_color = color
+        cv2.rectangle(frame, (x1, y1), (x2, y2), draw_color, -1)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        tx = x1 + (x2 - x1 - text_size[0]) // 2
+        ty = y1 + (y2 - y1 + text_size[1]) // 2
+        cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     
     return frame
 
@@ -257,7 +309,7 @@ try:
         # === BUTTON POLLING ===
         
         # Settings combo (PLAY + SAVE) - placeholder
-        if GPIO.read(GPIOCHIP_NUM, BTN_PLAY) and GPIO.read(GPIOCHIP_NUM, BTN_SAVE):
+        if is_pressed(BTN_PLAY) and is_pressed(BTN_SAVE):
             if settings_combo_start is None:
                 settings_combo_start = current_time
             elif current_time - settings_combo_start >= SETTINGS_COMBO_TIME:
@@ -268,7 +320,7 @@ try:
             settings_combo_start = None
         
         # CAPTURE with onion toggle
-        capture_btn_pressed = GPIO.read(GPIOCHIP_NUM, BTN_CAPTURE)
+        capture_btn_pressed = is_pressed(BTN_CAPTURE)
         
         if capture_btn_pressed:
             if onion_toggle_start is None:
@@ -300,7 +352,7 @@ try:
                 onion_toggle_start = None
         
         # PLAY
-        if GPIO.read(GPIOCHIP_NUM, BTN_PLAY):
+        if is_pressed(BTN_PLAY):
             if current_time - last_button_press[BTN_PLAY] > MIN_BUTTON_INTERVAL:
                 if len(frames) > 0:
                     playing = not playing
@@ -312,7 +364,7 @@ try:
                 last_button_press[BTN_PLAY] = current_time
         
         # REWIND (delete)
-        if GPIO.read(GPIOCHIP_NUM, BTN_REWIND):
+        if is_pressed(BTN_REWIND):
             if rewind_press_start is None:
                 rewind_press_start = current_time
             elif current_time - rewind_press_start >= REWIND_HOLD_TIME:
@@ -331,7 +383,7 @@ try:
             rewind_press_start = None
         
         # CLEAR (hold to clear all)
-        if GPIO.read(GPIOCHIP_NUM, BTN_CLEAR):
+        if is_pressed(BTN_CLEAR):
             if clear_press_start is None:
                 clear_press_start = current_time
             elif current_time - clear_press_start >= CLEAR_HOLD_TIME:
@@ -343,7 +395,7 @@ try:
             clear_press_start = None
         
         # SAVE
-        if GPIO.read(GPIOCHIP_NUM, BTN_SAVE):
+        if is_pressed(BTN_SAVE):
             if current_time - last_button_press[BTN_SAVE] > MIN_BUTTON_INTERVAL:
                 if len(frames) > 0:
                     show_message("Saving...", (255, 255, 0))
