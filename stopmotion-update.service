@@ -1,0 +1,12 @@
+[Unit]
+Description=Pull latest stopmotion code from git
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /root/stopmotion/update_on_boot.sh
+RemainAfterExit=false
+
+[Install]
+WantedBy=multi-user.target
