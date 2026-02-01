@@ -559,13 +559,31 @@ try:
                                    [cv2.IMWRITE_JPEG_QUALITY, 90])
                     
                     h, w = frames[0].shape[:2]
-                    out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'),
+                    tmp_path = video_path + ".tmp.avi"
+                    out = cv2.VideoWriter(tmp_path, cv2.VideoWriter_fourcc(*'XVID'),
                                          settings["fps"], (w, h))
                     for f in frames:
                         out.write(f)
                     out.release()
-                    
-                    show_message(f"Saved {len(frames)}!", (0, 255, 0))
+
+                    # Re-encode to H.264 with silent audio for Jellyfin compatibility
+                    ffmpeg_result = subprocess.run([
+                        "ffmpeg", "-y",
+                        "-i", tmp_path,
+                        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast",
+                        "-c:a", "aac", "-shortest",
+                        video_path
+                    ], capture_output=True, text=True, timeout=120)
+
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                    if ffmpeg_result.returncode != 0:
+                        print(f"ffmpeg error: {ffmpeg_result.stderr}")
+                        show_message("Encode failed!", (0, 0, 255))
+                    else:
+                        show_message(f"Saved {len(frames)}!", (0, 255, 0))
                     print(f"✅ Saved: {video_path}")
 
                     # Trigger background sync to server
