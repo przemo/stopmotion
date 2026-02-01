@@ -361,8 +361,10 @@ try:
             if onion_toggle_start is not None:
                 hold_time = current_time - onion_toggle_start
                 if hold_time < ONION_TOGGLE_HOLD_TIME and hold_time > 0.1:
-                    # Quick press - capture frame
-                    if not playing and current_time - last_button_press[BTN_CAPTURE] > MIN_BUTTON_INTERVAL:
+                    # Quick press - capture frame (auto-exit playing mode)
+                    if current_time - last_button_press[BTN_CAPTURE] > MIN_BUTTON_INTERVAL:
+                        if playing:
+                            playing = False
                         if len(frames) < settings["max_frames"]:
                             ret, frame = cap.read()
                             if ret:
@@ -394,6 +396,8 @@ try:
                 if len(frames) > 0:
                     deleted = min(5, len(frames))
                     frames = frames[:-deleted]
+                    if len(frames) == 0:
+                        playing = False
                     show_message(f"Deleted {deleted}!", (255, 255, 0))
                 rewind_press_start = None
         else:
@@ -401,6 +405,8 @@ try:
                 # Delete 1
                 if len(frames) > 0:
                     frames.pop()
+                    if len(frames) == 0:
+                        playing = False
                     show_message(f"{len(frames)} left", (255, 255, 0))
             rewind_press_start = None
         
@@ -411,6 +417,7 @@ try:
             elif current_time - clear_press_start >= CLEAR_HOLD_TIME:
                 count = len(frames)
                 frames = []
+                playing = False
                 show_message(f"Cleared {count}!", (255, 0, 0))
                 clear_press_start = None
         else:
