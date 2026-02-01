@@ -46,17 +46,20 @@ SETTINGS_COMBO_TIME = 2.0
 
 ONION_SKIN_COLORS = [(0, 255, 0), (0, 200, 200)]
 
+# Display layout (1024x600 screen, buttons on left)
+DISPLAY_WIDTH = 1024
+DISPLAY_HEIGHT = 600
+BTN_COL_WIDTH = 120
+BTN_MARGIN = 8
+
 # Screen button definitions (fallback for physical buttons)
 BUTTON_DEFS = [
-    (BTN_CAPTURE, "CAPTURE", (0, 160, 0)),
-    (BTN_PLAY,    "PLAY",    (180, 100, 0)),
-    (BTN_REWIND,  "DELETE",  (0, 140, 200)),
-    (BTN_CLEAR,   "CLEAR",   (0, 0, 180)),
-    (BTN_SAVE,    "SAVE",    (160, 0, 130)),
+    (BTN_CAPTURE, "CAPTURE", (0, 0, 200)),      # Red
+    (BTN_REWIND,  "DELETE",  (0, 120, 255)),     # Orange
+    (BTN_PLAY,    "PLAY",    (0, 220, 220)),     # Yellow
+    (BTN_CLEAR,   "CLEAR",   (0, 180, 0)),       # Green
+    (BTN_SAVE,    "SAVE",    (200, 100, 0)),     # Blue
 ]
-BTN_HEIGHT = 55
-BTN_MARGIN = 8
-BTN_BOTTOM_PAD = 5
 
 class GPIO:
     """Improved GPIO with debouncing"""
@@ -144,19 +147,25 @@ window_name = 'Stop Motion Studio'
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-# Screen button regions
-def calc_button_regions(w, h):
+# Screen button regions (vertical left column)
+def calc_button_regions():
     n = len(BUTTON_DEFS)
-    total_margin = BTN_MARGIN * (n + 1)
-    btn_w = (w - total_margin) // n
-    btn_y = h - BTN_HEIGHT - BTN_BOTTOM_PAD
+    btn_w = BTN_COL_WIDTH - BTN_MARGIN * 2
+    total_v_margin = BTN_MARGIN * (n + 1)
+    btn_h = (DISPLAY_HEIGHT - total_v_margin) // n
     regions = {}
     for i, (gpio, label, color) in enumerate(BUTTON_DEFS):
-        x1 = BTN_MARGIN + i * (btn_w + BTN_MARGIN)
-        regions[gpio] = (x1, btn_y, x1 + btn_w, btn_y + BTN_HEIGHT, label, color)
+        x1 = BTN_MARGIN
+        y1 = BTN_MARGIN + i * (btn_h + BTN_MARGIN)
+        regions[gpio] = (x1, y1, x1 + btn_w, y1 + btn_h, label, color)
     return regions
 
-button_regions = calc_button_regions(width, height)
+button_regions = calc_button_regions()
+
+# Camera area
+CAM_X = BTN_COL_WIDTH
+CAM_W = DISPLAY_WIDTH - BTN_COL_WIDTH
+CAM_H = DISPLAY_HEIGHT
 screen_btn_active = None
 
 def mouse_callback(event, x, y, flags, param):
@@ -227,54 +236,69 @@ def apply_onion_skin(frame):
     
     return result
 
+def fit_frame_to_area(frame, area_w, area_h):
+    """Scale and crop frame to fill target area"""
+    fh, fw = frame.shape[:2]
+    scale = max(area_w / fw, area_h / fh)
+    new_w = int(fw * scale)
+    new_h = int(fh * scale)
+    resized = cv2.resize(frame, (new_w, new_h))
+    crop_x = (new_w - area_w) // 2
+    crop_y = (new_h - area_h) // 2
+    return resized[crop_y:crop_y + area_h, crop_x:crop_x + area_w]
+
 def draw_overlay(frame):
+    """Draw status overlay on the camera area of the display"""
     h, w = frame.shape[:2]
-    
-    # Top bar
-    cv2.rectangle(frame, (0, 0), (w, 70), (0, 0, 0), -1)
-    
+
+    # Top bar over camera area
+    cv2.rectangle(frame, (CAM_X, 0), (w, 70), (0, 0, 0), -1)
+
     # Frame count
     max_f = settings["max_frames"]
     color = (0, 255, 0) if len(frames) < max_f * 0.8 else (0, 0, 255)
-    cv2.putText(frame, f"Frames: {len(frames)}/{max_f}", (20, 45), 
+    cv2.putText(frame, f"Frames: {len(frames)}/{max_f}", (CAM_X + 20, 45),
                cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
-    
+
     # Status
     status = "PLAYING" if playing else "LIVE"
     s_color = (0, 255, 0) if playing else (255, 255, 255)
     cv2.putText(frame, status, (w - 200, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.9, s_color, 2)
-    
+
     # Onion indicator
     if onion_skin_enabled and len(frames) > 0 and not playing:
         cv2.putText(frame, "ONION", (w - 200, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-    
-    # Message
+
+    # Message centered in camera area
     if time.time() - message_start_time < MESSAGE_DISPLAY_TIME:
         text_size = cv2.getTextSize(current_message, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)[0]
-        text_x = (w - text_size[0]) // 2
+        text_x = CAM_X + (CAM_W - text_size[0]) // 2
         text_y = h // 2
-        
-        cv2.putText(frame, current_message, (text_x, text_y), 
+
+        cv2.putText(frame, current_message, (text_x, text_y),
                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 5)
-        cv2.putText(frame, current_message, (text_x, text_y), 
+        cv2.putText(frame, current_message, (text_x, text_y),
                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, message_color, 3)
-    
-    # Clear hold progress
+
+    # Clear hold progress centered in camera area
     if clear_press_start:
         hold_time = time.time() - clear_press_start
         progress = min(hold_time / CLEAR_HOLD_TIME, 1.0)
-        
-        bar_w = int(w * 0.6)
-        bar_x = (w - bar_w) // 2
-        bar_y = h - 120
-        
+
+        bar_w = int(CAM_W * 0.6)
+        bar_x = CAM_X + (CAM_W - bar_w) // 2
+        bar_y = h - 80
+
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 40), (50, 50, 50), -1)
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + int(bar_w * progress), bar_y + 40), (0, 0, 255), -1)
         cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 40), (255, 255, 255), 3)
         cv2.putText(frame, "HOLD TO CLEAR ALL", (bar_x, bar_y - 10),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-    
-    # Screen buttons
+
+    return frame
+
+def draw_buttons(frame):
+    """Draw button column on the left side"""
     for gpio, (x1, y1, x2, y2, label, color) in button_regions.items():
         if screen_btn_active == gpio:
             draw_color = tuple(min(c + 80, 255) for c in color)
@@ -282,12 +306,10 @@ def draw_overlay(frame):
             draw_color = color
         cv2.rectangle(frame, (x1, y1), (x2, y2), draw_color, -1)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
-        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)[0]
         tx = x1 + (x2 - x1 - text_size[0]) // 2
         ty = y1 + (y2 - y1 + text_size[1]) // 2
-        cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    
-    return frame
+        cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
 # Main loop
 print("Starting...")
@@ -422,30 +444,34 @@ try:
                     show_message("No frames!", (0, 165, 255))
                 last_button_press[BTN_SAVE] = current_time
         
-        # === GET DISPLAY FRAME ===
-        
+        # === GET CAMERA FRAME ===
+
         if playing and len(frames) > 0:
             if current_time - last_play_time >= (1.0 / settings["fps"]):
-                display_frame = frames[play_index].copy()
+                cam_frame = frames[play_index].copy()
                 play_index = (play_index + 1) % len(frames)
                 last_play_time = current_time
             else:
                 cv2.waitKey(1)
                 continue
         else:
-            ret, display_frame = cap.read()
+            ret, cam_frame = cap.read()
             if not ret:
                 time.sleep(0.01)
                 continue
-            
+
             # Apply onion skin
-            display_frame = apply_onion_skin(display_frame)
-        
-        # Draw overlay
-        display_frame = draw_overlay(display_frame)
-        
+            cam_frame = apply_onion_skin(cam_frame)
+
+        # === COMPOSE DISPLAY ===
+        display = np.zeros((DISPLAY_HEIGHT, DISPLAY_WIDTH, 3), dtype=np.uint8)
+        fitted = fit_frame_to_area(cam_frame, CAM_W, CAM_H)
+        display[0:CAM_H, CAM_X:CAM_X + CAM_W] = fitted
+        draw_overlay(display)
+        draw_buttons(display)
+
         # Display
-        cv2.imshow(window_name, display_frame)
+        cv2.imshow(window_name, display)
         
         # Check quit
         if cv2.waitKey(1) & 0xFF == ord('q'):
