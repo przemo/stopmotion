@@ -384,7 +384,7 @@ def execute_menu_item(index):
         subprocess.Popen(["sudo", "reboot"])
     elif item == "Shutdown":
         show_message("Shutting down...", (0, 0, 255))
-        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+        subprocess.Popen(["sudo", "poweroff"])
     settings_menu_active = False
     menu_selection = 0
 
