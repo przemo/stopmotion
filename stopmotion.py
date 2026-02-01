@@ -169,15 +169,26 @@ CAM_H = DISPLAY_HEIGHT
 screen_btn_active = None
 
 def mouse_callback(event, x, y, flags, param):
-    global screen_btn_active
+    global screen_btn_active, menu_clicked_item, status_bar_press_start
     if event == cv2.EVENT_LBUTTONDOWN:
-        screen_btn_active = None
-        for gpio, (x1, y1, x2, y2, _, _) in button_regions.items():
-            if x1 <= x <= x2 and y1 <= y <= y2:
-                screen_btn_active = gpio
-                break
+        if settings_menu_active:
+            for i, (x1, y1, x2, y2, _) in enumerate(menu_regions):
+                if x1 <= x <= x2 and y1 <= y <= y2:
+                    menu_clicked_item = i
+                    break
+        else:
+            if CAM_X <= x <= DISPLAY_WIDTH and 0 <= y <= 70:
+                status_bar_press_start = time.time()
+            else:
+                status_bar_press_start = None
+            screen_btn_active = None
+            for gpio, (x1, y1, x2, y2, _, _) in button_regions.items():
+                if x1 <= x <= x2 and y1 <= y <= y2:
+                    screen_btn_active = gpio
+                    break
     elif event == cv2.EVENT_LBUTTONUP:
         screen_btn_active = None
+        status_bar_press_start = None
 
 cv2.setMouseCallback(window_name, mouse_callback)
 
@@ -196,6 +207,15 @@ clear_press_start = None
 rewind_press_start = None
 onion_toggle_start = None
 settings_combo_start = None
+
+# Settings menu
+settings_menu_active = False
+menu_selection = 0
+menu_clicked_item = -1
+status_bar_press_start = None
+MENU_ITEMS = ["Reboot", "Shutdown", "Back"]
+MENU_COLORS = [(0, 140, 220), (0, 0, 180), (100, 100, 100)]
+SETTINGS_BAR_HOLD_TIME = 3.0
 
 # Message
 current_message = ""
@@ -311,6 +331,63 @@ def draw_buttons(frame):
         ty = y1 + (y2 - y1 + text_size[1]) // 2
         cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
 
+menu_regions = []
+
+def draw_settings_menu(frame):
+    """Draw settings menu overlay on camera area"""
+    global menu_regions
+    h, w = frame.shape[:2]
+
+    # Dim camera area
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (CAM_X, 0), (w, h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+
+    # Title
+    title = "SETTINGS"
+    title_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)[0]
+    title_x = CAM_X + (CAM_W - title_size[0]) // 2
+    cv2.putText(frame, title, (title_x, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+
+    # Menu items
+    btn_w = 300
+    btn_h = 80
+    gap = 20
+    n = len(MENU_ITEMS)
+    total_h = n * btn_h + (n - 1) * gap
+    start_y = (h - total_h) // 2 + 30
+    start_x = CAM_X + (CAM_W - btn_w) // 2
+
+    menu_regions = []
+    for i in range(n):
+        y = start_y + i * (btn_h + gap)
+        x1, y1, x2, y2 = start_x, y, start_x + btn_w, y + btn_h
+        menu_regions.append((x1, y1, x2, y2, MENU_ITEMS[i]))
+
+        color = MENU_COLORS[i]
+        if i == menu_selection:
+            color = tuple(min(c + 60, 255) for c in color)
+
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, -1)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
+
+        text_size = cv2.getTextSize(MENU_ITEMS[i], cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
+        tx = x1 + (btn_w - text_size[0]) // 2
+        ty = y1 + (btn_h + text_size[1]) // 2
+        cv2.putText(frame, MENU_ITEMS[i], (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+
+def execute_menu_item(index):
+    global settings_menu_active, menu_selection
+    item = MENU_ITEMS[index]
+    if item == "Reboot":
+        show_message("Rebooting...", (0, 140, 255))
+        subprocess.Popen(["sudo", "reboot"])
+    elif item == "Shutdown":
+        show_message("Shutting down...", (0, 0, 255))
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+    settings_menu_active = False
+    menu_selection = 0
+
 # Main loop
 print("Starting...")
 print("GPIO Configuration:")
@@ -330,17 +407,60 @@ try:
         
         # === BUTTON POLLING ===
         
-        # Settings combo (PLAY + SAVE) - placeholder
+        # Settings combo (PLAY + SAVE held) - opens settings menu
         if is_pressed(BTN_PLAY) and is_pressed(BTN_SAVE):
             if settings_combo_start is None:
                 settings_combo_start = current_time
             elif current_time - settings_combo_start >= SETTINGS_COMBO_TIME:
-                show_message("Settings: N/A", (0, 255, 255))
+                settings_menu_active = True
+                menu_selection = 0
                 settings_combo_start = None
             continue
         else:
             settings_combo_start = None
-        
+
+        # Status bar long-press to open settings (screen access)
+        if status_bar_press_start and current_time - status_bar_press_start >= SETTINGS_BAR_HOLD_TIME:
+            settings_menu_active = True
+            menu_selection = 0
+            status_bar_press_start = None
+
+        # Settings menu mode
+        if settings_menu_active:
+            if menu_clicked_item >= 0:
+                execute_menu_item(menu_clicked_item)
+                menu_clicked_item = -1
+            elif is_pressed(BTN_PLAY):
+                if current_time - last_button_press[BTN_PLAY] > MIN_BUTTON_INTERVAL:
+                    menu_selection = (menu_selection + 1) % len(MENU_ITEMS)
+                    last_button_press[BTN_PLAY] = current_time
+            elif is_pressed(BTN_REWIND):
+                if current_time - last_button_press[BTN_REWIND] > MIN_BUTTON_INTERVAL:
+                    menu_selection = (menu_selection - 1) % len(MENU_ITEMS)
+                    last_button_press[BTN_REWIND] = current_time
+            elif is_pressed(BTN_CAPTURE):
+                if current_time - last_button_press[BTN_CAPTURE] > MIN_BUTTON_INTERVAL:
+                    execute_menu_item(menu_selection)
+                    last_button_press[BTN_CAPTURE] = current_time
+            elif is_pressed(BTN_CLEAR):
+                if current_time - last_button_press[BTN_CLEAR] > MIN_BUTTON_INTERVAL:
+                    settings_menu_active = False
+                    menu_selection = 0
+                    last_button_press[BTN_CLEAR] = current_time
+
+            # Show camera feed with menu overlay
+            ret, cam_frame = cap.read()
+            if ret:
+                display = np.zeros((DISPLAY_HEIGHT, DISPLAY_WIDTH, 3), dtype=np.uint8)
+                fitted = fit_frame_to_area(cam_frame, CAM_W, CAM_H)
+                display[0:CAM_H, CAM_X:CAM_X + CAM_W] = fitted
+                draw_settings_menu(display)
+                draw_buttons(display)
+                cv2.imshow(window_name, display)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            continue
+
         # CAPTURE with onion toggle
         capture_btn_pressed = is_pressed(BTN_CAPTURE)
         
