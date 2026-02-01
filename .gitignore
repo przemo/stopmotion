@@ -2,4 +2,5 @@ saves/*
 *.mp4
 *.jpg
 *.png
+sync_config.json
 
