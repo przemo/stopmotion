@@ -447,6 +447,13 @@ try:
                     
                     show_message(f"Saved {len(frames)}!", (0, 255, 0))
                     print(f"✅ Saved: {video_path}")
+
+                    # Trigger background sync to server
+                    sync_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sync_to_server.py")
+                    sync_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sync_config.json")
+                    if os.path.exists(sync_config):
+                        subprocess.Popen(["python3", sync_script])
+                        show_message(f"Saved {len(frames)} & syncing!", (0, 255, 0))
                 else:
                     show_message("No frames!", (0, 165, 255))
                 last_button_press[BTN_SAVE] = current_time
