@@ -213,8 +213,9 @@ settings_menu_active = False
 menu_selection = 0
 menu_clicked_item = -1
 status_bar_press_start = None
-MENU_ITEMS = ["Reboot", "Shutdown", "Back"]
-MENU_COLORS = [(0, 140, 220), (0, 0, 180), (100, 100, 100)]
+RESOLUTION_OPTIONS = ["1920x1080", "1280x720", "800x600", "640x480"]
+MENU_ITEMS = ["Resolution", "Reboot", "Shutdown", "Back"]
+MENU_COLORS = [(180, 120, 0), (0, 140, 220), (0, 0, 180), (100, 100, 100)]
 SETTINGS_BAR_HOLD_TIME = 3.0
 
 # Message
@@ -350,7 +351,7 @@ def draw_settings_menu(frame):
     cv2.putText(frame, title, (title_x, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
 
     # Menu items
-    btn_w = 300
+    btn_w = 350
     btn_h = 80
     gap = 20
     n = len(MENU_ITEMS)
@@ -371,15 +372,34 @@ def draw_settings_menu(frame):
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, -1)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
 
-        text_size = cv2.getTextSize(MENU_ITEMS[i], cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
+        label = MENU_ITEMS[i]
+        if label == "Resolution":
+            label = f"Res: {settings['resolution']}"
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
         tx = x1 + (btn_w - text_size[0]) // 2
         ty = y1 + (btn_h + text_size[1]) // 2
-        cv2.putText(frame, MENU_ITEMS[i], (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        cv2.putText(frame, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
 def execute_menu_item(index):
     global settings_menu_active, menu_selection
     item = MENU_ITEMS[index]
-    if item == "Reboot":
+    if item == "Resolution":
+        current = settings["resolution"]
+        try:
+            idx = RESOLUTION_OPTIONS.index(current)
+        except ValueError:
+            idx = -1
+        next_res = RESOLUTION_OPTIONS[(idx + 1) % len(RESOLUTION_OPTIONS)]
+        w, h = map(int, next_res.split('x'))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        for _ in range(5):
+            cap.read()
+        settings["resolution"] = next_res
+        save_settings()
+        show_message(f"Res: {next_res}", (0, 255, 255))
+        return  # Stay in menu
+    elif item == "Reboot":
         show_message("Rebooting...", (0, 140, 255))
         subprocess.Popen(["sudo", "reboot"])
     elif item == "Shutdown":
