@@ -14,5 +14,5 @@ EOF
 
 systemctl daemon-reload
 systemctl enable stopmotion.service
-systemctl enable touchkiosk.service
+systemctl disable touchkiosk.service 2>/dev/null || true
 echo "Done. Services installed."
