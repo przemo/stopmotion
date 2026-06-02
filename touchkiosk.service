@@ -1,0 +1,15 @@
+[Unit]
+Description=TouchKiosk HA Dashboard
+After=multi-user.target
+Conflicts=stopmotion.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/xinit /root/stopmotion/start_kiosk.sh -- :0 vt1 -nolisten tcp
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

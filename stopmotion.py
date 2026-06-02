@@ -135,6 +135,7 @@ if not cap.isOpened():
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+cap.set(cv2.CAP_PROP_FPS, 20)
 
 for _ in range(10):
     cap.read()
@@ -213,8 +214,8 @@ settings_menu_active = False
 menu_selection = 0
 menu_clicked_item = -1
 status_bar_press_start = None
-MENU_ITEMS = ["Reboot", "Shutdown", "Back"]
-MENU_COLORS = [(0, 140, 220), (0, 0, 180), (100, 100, 100)]
+MENU_ITEMS = ["Reboot", "Shutdown", "Kiosk", "Back"]
+MENU_COLORS = [(0, 140, 220), (0, 0, 180), (0, 170, 110), (100, 100, 100)]
 SETTINGS_BAR_HOLD_TIME = 3.0
 
 # Message
@@ -385,6 +386,9 @@ def execute_menu_item(index):
     elif item == "Shutdown":
         show_message("Shutting down...", (0, 0, 255))
         subprocess.Popen(["sudo", "poweroff"])
+    elif item == "Kiosk":
+        show_message("Switching to Kiosk...", (0, 170, 110))
+        subprocess.Popen(["bash", "-c", "sleep 1 && systemctl start touchkiosk.service"])
     settings_menu_active = False
     menu_selection = 0
 
@@ -457,7 +461,7 @@ try:
                 draw_settings_menu(display)
                 draw_buttons(display)
                 cv2.imshow(window_name, display)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            if cv2.waitKey(33) & 0xFF == ord('q'):
                 break
             continue
 
@@ -604,7 +608,7 @@ try:
                 play_index = (play_index + 1) % len(frames)
                 last_play_time = current_time
             else:
-                cv2.waitKey(1)
+                cv2.waitKey(33)
                 continue
         else:
             ret, cam_frame = cap.read()
@@ -626,7 +630,7 @@ try:
         cv2.imshow(window_name, display)
         
         # Check quit
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(33) & 0xFF == ord('q'):
             break
 
 except KeyboardInterrupt:

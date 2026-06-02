@@ -1,0 +1,22 @@
+[Unit]
+Description=Stop Motion Studio
+After=multi-user.target
+
+[Service]
+Type=simple
+User=root
+Environment=DISPLAY=:0
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+ExecStart=/usr/bin/xinit /root/stopmotion/stopmotion.py -- :0 vt1 -nolisten tcp
+Restart=always
+RestartSec=3
+Nice=10
+MemoryMax=700M
+MemorySwapMax=0
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target
