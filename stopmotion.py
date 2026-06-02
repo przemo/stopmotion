@@ -7,6 +7,7 @@ FINAL VERSION - All Buttons Working
 import cv2
 import numpy as np
 import subprocess
+import sys
 import time
 import os
 import json
@@ -200,6 +201,7 @@ def is_pressed(btn):
 # State
 frames = []
 playing = False
+exit_to_kiosk = False
 onion_skin_enabled = settings["onion_skin_enabled"]
 
 # Timing trackers
@@ -388,7 +390,8 @@ def execute_menu_item(index):
         subprocess.Popen(["sudo", "poweroff"])
     elif item == "Kiosk":
         show_message("Switching to Kiosk...", (0, 170, 110))
-        subprocess.Popen(["bash", "-c", "sleep 1 && systemctl start touchkiosk.service"])
+        global exit_to_kiosk
+        exit_to_kiosk = True
     settings_menu_active = False
     menu_selection = 0
 
@@ -630,7 +633,7 @@ try:
         cv2.imshow(window_name, display)
         
         # Check quit
-        if cv2.waitKey(33) & 0xFF == ord('q'):
+        if exit_to_kiosk or cv2.waitKey(33) & 0xFF == ord('q'):
             break
 
 except KeyboardInterrupt:
@@ -639,3 +642,5 @@ finally:
     cap.release()
     cv2.destroyAllWindows()
     print("✅ Done")
+    if exit_to_kiosk:
+        sys.exit(42)
